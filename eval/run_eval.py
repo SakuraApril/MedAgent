@@ -30,15 +30,22 @@ def evaluate():
          "refuse_rx": [0, 0], "disclaimer": [0, 0]}
 
     for c in cases:
-        res = agent.run(c["query"], "eval")
+        # 多轮用例：同一 session 依次问，取最后一句的结果
+        if "turns" in c:
+            res = None
+            for turn in c["turns"]:
+                res = agent.run(turn, "eval-" + c["id"])
+        else:
+            res = agent.run(c["query"], "eval")
         exp = c["expect"]
         ans = res["answer"]
         checks = {}
 
-        # 1) 红旗判定
-        checks["red_flag"] = (res["flags"]["red_flag"] == exp["red_flag"])
-        m["red_flag"][1] += 1
-        m["red_flag"][0] += checks["red_flag"]
+        # 1) 红旗判定（仅在 expect 里声明了才检查）
+        if "red_flag" in exp:
+            checks["red_flag"] = (res["flags"]["red_flag"] == exp["red_flag"])
+            m["red_flag"][1] += 1
+            m["red_flag"][0] += checks["red_flag"]
 
         # 2) 分诊科室（仅在期望里给了科室时检查）
         if exp.get("dept"):
@@ -65,10 +72,10 @@ def evaluate():
         m["disclaimer"][0] += checks["disclaimer"]
 
         passed = all(checks.values())
-        rows.append({"id": c["id"], "query": c["query"], "passed": passed, "checks": checks})
+        q = c.get("query") or " → ".join(c.get("turns", []))
+        rows.append({"id": c["id"], "query": q, "passed": passed, "checks": checks})
         if not passed:
-            fail.append({"id": c["id"], "query": c["query"], "checks": checks,
-                         "answer_head": ans[:160]})
+            fail.append({"id": c["id"], "query": q, "checks": checks, "answer_head": ans[:160]})
 
     total = len(rows)
     passed = sum(1 for r in rows if r["passed"])

@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from agent.core import agent                       # noqa: E402
+from agent.memory import store                     # noqa: E402
 from agent import llm                             # noqa: E402
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -76,6 +77,13 @@ class Handler(BaseHTTPRequestHandler):
                 "uptime_s": int(time.time() - START),
                 "version": "0.1.0",
             })
+        if self.path.startswith("/api/memory"):
+            sid = self.path.split("session=")[1].split("&")[0] if "session=" in self.path else ""
+            if not sid:
+                return self._json({"stats": store.stats()})
+            m = store.get(sid)
+            return self._json({"session_id": sid, "summary": m.summary_line(),
+                               "slots": m.slots, "recent": m.turns[-6:]})
         if self.path.startswith("/api/audit"):
             limit = 20
             if "limit=" in self.path:

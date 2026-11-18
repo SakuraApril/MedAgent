@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
-"""工具集：分诊、红旗、知识库检索、药品查询。
+"""工具集：分诊、红旗、知识库检索（RAG）、药品查询。
 
-设计原则：每个工具只做一件可解释的事，输入输出都是纯数据，
-便于被 Agent 编排、也便于单独做单元测试。
+每个工具都用 JSON Schema 声明参数，既能被规则策略调度，
+也能直接交给支持 function calling 的大模型调用（见 TOOL_SPECS）。
 """
 import json
 import os
 import re
+
+from . import rag
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
@@ -21,6 +23,9 @@ _TRIAGE = _load("triage_rules.json")
 _KB = _load("kb.json")["docs"]
 _DRUGS = _load("drugs.json")["drugs"]
 _SYN = _load("synonyms.json")["map"]
+
+# 知识库索引在启动时构建一次（生产环境应换成向量库 + 增量更新）
+KB_INDEX = rag.TfidfIndex(_KB)
 
 
 def _norm(s):
@@ -75,21 +80,10 @@ def triage(text):
     }
 
 
-# ────────────────────────────────── 工具 3：知识库检索
+# ────────────────────────────────── 工具 3：知识库（RAG）
 def search_kb(query, top_k=2):
-    """极简检索：标题/标签/正文的关键词命中数打分。真实产品应替换为向量检索 + rerank。"""
-    q = _norm(query)
-    grams = {q[i:i + 2] for i in range(max(0, len(q) - 1))}
-    scored = []
-    for d in _KB:
-        blob = _norm(d["title"] + "".join(d["tags"]) + d["text"])
-        hit = sum(1 for g in grams if g in blob)
-        tag_hit = sum(1 for tag in d["tags"] if _norm(tag) in q)
-        score = hit + tag_hit * 3
-        if score > 0:
-            scored.append((score, d))
-    scored.sort(key=lambda x: -x[0])
-    return [{"id": d["id"], "title": d["title"], "text": d["text"]} for _, d in scored[:top_k]]
+    """走 RAG 链路：分块 → TF-IDF 向量 → 余弦相似度 → top-k（带分数）。"""
+    return KB_INDEX.search(query, top_k=top_k)
 
 
 # ────────────────────────────────── 工具 4：药品查询
@@ -103,9 +97,39 @@ def drug_lookup(text):
     return out
 
 
-TOOLS = {
-    "check_red_flag": check_red_flag,
-    "triage": triage,
-    "search_kb": search_kb,
-    "drug_lookup": drug_lookup,
-}
+# ────────────────────────────────── 工具声明（可直接给 LLM 做 function calling）
+TOOL_SPECS = [
+    {"name": "check_red_flag",
+     "description": "判断描述中是否包含需要立即就医的危险信号（胸痛伴冷汗、意识改变、卒中征象等）",
+     "parameters": {"type": "object",
+                    "properties": {"text": {"type": "string", "description": "用户对症状的描述"}},
+                    "required": ["text"]}},
+    {"name": "triage",
+     "description": "根据症状推断应当首诊的科室",
+     "parameters": {"type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"]}},
+    {"name": "search_kb",
+     "description": "在健康科普知识库中检索相关条目（向量检索，返回带相似度分数）",
+     "parameters": {"type": "object",
+                    "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 2}},
+                    "required": ["query"]}},
+    {"name": "drug_lookup",
+     "description": "查询提到了哪些药物，返回通用名与通用注意事项（不给剂量）",
+     "parameters": {"type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"]}},
+]
+
+_FUNCS = {"check_red_flag": check_red_flag, "triage": triage,
+          "search_kb": search_kb, "drug_lookup": drug_lookup}
+
+
+def dispatch(name, **kwargs):
+    """统一调度入口：规则策略和 LLM 都走这里，便于审计与单测。"""
+    if name not in _FUNCS:
+        raise KeyError(f"unknown tool: {name}")
+    return _FUNCS[name](**kwargs)
+
+
+TOOLS = _FUNCS
