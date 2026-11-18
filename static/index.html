@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MedAgent · 医疗分诊助手</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,"Microsoft YaHei",sans-serif; background:#f5f6f8; color:#1a1a1a; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 60px; }
+  header { display:flex; align-items:baseline; gap:12px; margin-bottom:6px; }
+  h1 { font-size:22px; margin:0; color:#1b3355; }
+  .tag { font-size:12px; color:#8c3b2e; border:1px solid #e3cdc7; background:#fbf6f4; padding:2px 8px; border-radius:10px; }
+  .sub { color:#5c636e; font-size:13px; margin:6px 0 18px; line-height:1.7; }
+  .panel { background:#fff; border:1px solid #e3e6eb; border-radius:10px; padding:16px; margin-bottom:14px; }
+  textarea { width:100%; min-height:76px; border:1px solid #d8dce3; border-radius:8px; padding:10px; font-size:14px; resize:vertical; font-family:inherit; }
+  .row { display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  button { border:none; border-radius:8px; padding:9px 16px; font-size:14px; cursor:pointer; background:#1b3355; color:#fff; }
+  button.ghost { background:#fff; color:#1b3355; border:1px solid #c9d2e0; }
+  button:disabled { opacity:.5; cursor:default; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .chip { font-size:12px; color:#475060; background:#f0f2f6; border:1px solid #e0e4ea; padding:5px 10px; border-radius:14px; cursor:pointer; }
+  .answer { white-space:pre-wrap; line-height:1.85; font-size:14.5px; }
+  .answer strong { color:#1b3355; }
+  .flags { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .flag { font-size:11.5px; padding:3px 9px; border-radius:12px; background:#f0f2f6; color:#5c636e; }
+  .flag.red { background:#fdecea; color:#a63d2e; }
+  .flag.ok { background:#eaf6ee; color:#2f7a4a; }
+  .trace { font-size:12.5px; color:#4b5563; }
+  .trace div { padding:6px 0; border-bottom:1px dashed #eceef2; }
+  .trace b { color:#1b3355; }
+  .mono { font-family:Consolas,monospace; font-size:12px; color:#7a828e; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid #eef0f3; }
+  th { color:#5c636e; font-weight:600; background:#fafbfc; }
+  h2 { font-size:15px; color:#1b3355; margin:0 0 10px; }
+  .grid { display:grid; grid-template-columns: 1fr 340px; gap:14px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .note { font-size:12px; color:#8a9099; margin-top:10px; line-height:1.7; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>MedAgent · 医疗分诊助手</h1>
+    <span class="tag">不做诊断 · 只做分诊与就医提示</span>
+  </header>
+  <p class="sub">描述症状，我会告诉你<strong>该挂哪个科</strong>、<strong>哪些是危险信号</strong>、<strong>就诊前可以做什么</strong>。
+  涉及用药只给通用注意事项，不给剂量与处方。</p>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <textarea id="q" placeholder="例如：咳嗽三天，有黄痰，有点低烧"></textarea>
+        <div class="chips">
+          <span class="chip" data-q="我爸胸痛还冒冷汗，左臂发麻">🚨 红旗：胸痛</span>
+          <span class="chip" data-q="咳嗽三天，有黄痰，有点低烧">咳嗽低烧</span>
+          <span class="chip" data-q="我是不是得了肺癌？咳嗽一个月了">求诊断</span>
+          <span class="chip" data-q="拉肚子两天，该吃什么药？">求用药</span>
+        </div>
+        <div class="row">
+          <button id="send">发送</button>
+          <button class="ghost" id="clear">清空</button>
+          <span id="state" class="mono"></span>
+        </div>
+      </div>
+      <div class="panel" id="result" style="display:none">
+        <div class="flags" id="flags"></div>
+        <div class="answer" id="answer"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>执行轨迹</h2>
+        <div class="trace" id="trace"><span class="mono">尚无请求</span></div>
+        <div class="note">每一步「想了什么 → 调用哪个工具 → 看到什么」，都记录下来，出问题能查。</div>
+      </div>
+      <div class="panel">
+        <h2>平台自检</h2>
+        <div class="row">
+          <button class="ghost" id="health">健康检查</button>
+          <button class="ghost" id="evalBtn">跑评测（20 例）</button>
+          <button class="ghost" id="auditBtn">审计日志</button>
+        </div>
+        <div id="sysout" class="note"></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">⚠️ 本工具仅用于演示：所有回答均为健康信息参考，不构成诊断或用药建议。出现胸痛、呼吸困难、意识改变等情况请立即拨打 120。</p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const sid = "sess-" + Math.random().toString(36).slice(2, 8);
+
+function render(text) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+             .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+document.querySelectorAll(".chip").forEach(c => c.onclick = () => { $("q").value = c.dataset.q; send(); });
+$("clear").onclick = () => { $("q").value = ""; $("result").style.display = "none"; };
+
+async function send() {
+  const message = $("q").value.trim();
+  if (!message) return;
+  $("send").disabled = true;
+  $("state").textContent = "处理中…";
+  try {
+    const r = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, session_id: sid })
+    });
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+
+    const flags = [];
+    if (d.flags.red_flag) flags.push('<span class="flag red">🚨 红旗症状</span>');
+    if (d.flags.refused_diagnosis) flags.push('<span class="flag red">拒绝诊断</span>');
+    if (d.flags.refused_prescription) flags.push('<span class="flag red">拒绝开方</span>');
+    flags.push('<span class="flag ok">带免责声明</span>');
+    flags.push(`<span class="flag">${d.steps} 步 · ${d.latency_ms} ms</span>`);
+    $("flags").innerHTML = flags.join("");
+
+    $("answer").innerHTML = render(d.answer);
+    $("result").style.display = "block";
+
+    $("trace").innerHTML = d.trace.map(s =>
+      `<div><b>${s.n}. ${s.thought}</b><br>→ ${s.action}｜${s.observation}｜${s.ms}ms</div>`).join("");
+    $("state").textContent = "完成";
+  } catch (e) {
+    $("state").textContent = "请求失败：" + e.message;
+  } finally {
+    $("send").disabled = false;
+  }
+}
+$("send").onclick = send;
+$("q").addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(); });
+
+$("health").onclick = async () => {
+  const d = await (await fetch("/api/health")).json();
+  $("sysout").innerHTML = `服务正常 · 版本 ${d.version} · 已运行 ${d.uptime_s}s · LLM 润色：<b>${d.llm_enabled ? "开启" : "关闭（规则引擎）"}</b>`;
+};
+
+$("evalBtn").onclick = async () => {
+  $("sysout").textContent = "评测中…";
+  const d = await (await fetch("/api/eval", { method: "POST" })).json();
+  const m = Object.entries(d.metrics).filter(([, v]) => v.n)
+    .map(([k, v]) => `${k} ${v.hit}/${v.n}`).join(" · ");
+  $("sysout").innerHTML = `<b>通过 ${d.passed}/${d.total} = ${Math.round(d.pass_rate * 100)}%</b><br>${m}`;
+};
+
+$("auditBtn").onclick = async () => {
+  const d = await (await fetch("/api/audit?limit=8")).json();
+  if (!d.count) { $("sysout").textContent = "暂无审计记录"; return; }
+  $("sysout").innerHTML = `<table><tr><th>时间</th><th>会话</th><th>红旗</th><th>耗时</th></tr>` +
+    d.records.map(r => `<tr><td>${new Date(r.ts * 1000).toLocaleTimeString()}</td><td>${r.session}</td>
+      <td>${r.flags.red_flag ? "是" : "否"}</td><td>${r.latency_ms}ms</td></tr>`).join("") + "</table>";
+};
+</script>
+</body>
+</html>

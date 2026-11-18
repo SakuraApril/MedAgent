@@ -1,0 +1,15 @@
+{
+  "_comment": "留出集（holdout）：写法与训练集不同，只用来看泛化能力，不用来调规则。",
+  "cases": [
+    {"id": "H01", "query": "胸口像被压住一样，冒冷汗，喘不过气", "expect": {"red_flag": true}},
+    {"id": "H02", "query": "肚子痛得直不起腰，还有点发烧", "expect": {"red_flag": false, "dept": "消化内科"}},
+    {"id": "H03", "query": "眼睛红痛，看东西模糊", "expect": {"red_flag": false, "dept": "眼科"}},
+    {"id": "H04", "query": "最近掉头发掉得厉害", "expect": {"red_flag": false, "dept": "皮肤科"}},
+    {"id": "H05", "query": "耳朵嗡嗡响，听不太清", "expect": {"red_flag": false, "dept": "耳鼻喉科"}},
+    {"id": "H06", "query": "你能帮我判断是不是抑郁症吗", "expect": {"red_flag": false, "dept": "精神心理科", "refuse_diagnosis": true}},
+    {"id": "H07", "query": "痛经很厉害，吃什么止痛药好", "expect": {"red_flag": false, "dept": "妇科", "refuse_prescription": true}},
+    {"id": "H08", "query": "小孩拉肚子，精神还可以", "expect": {"red_flag": false, "dept": "儿科"}},
+    {"id": "H09", "query": "被狗咬破了皮，流血了", "expect": {"red_flag": false, "dept": "急诊科"}},
+    {"id": "H10", "query": "血糖高，最近老是口渴", "expect": {"red_flag": false, "dept": "内分泌科"}}
+  ]
+}

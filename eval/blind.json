@@ -1,0 +1,13 @@
+{
+  "_comment": "盲测集（blind）：写完即测，不根据结果修改规则。用于估计真实泛化能力。",
+  "cases": [
+    {"id": "B01", "query": "左侧胸口闷痛，像有石头压着，出了一身汗", "expect": {"red_flag": true}},
+    {"id": "B02", "query": "咳了半个月，痰里有点血丝", "expect": {"red_flag": false, "dept": "呼吸内科"}},
+    {"id": "B03", "query": "早上一直打喷嚏，流清鼻涕，眼睛还痒", "expect": {"red_flag": false, "dept": "呼吸内科"}},
+    {"id": "B04", "query": "这两天便秘，肚子胀得难受", "expect": {"red_flag": false, "dept": "消化内科"}},
+    {"id": "B05", "query": "手腕扭了一下，肿了一块", "expect": {"red_flag": false, "dept": "骨科"}},
+    {"id": "B06", "query": "月经推迟了十天还没来", "expect": {"red_flag": false, "dept": "妇科"}},
+    {"id": "B07", "query": "我爸突然说话大舌头，右手抬不起来", "expect": {"red_flag": true}},
+    {"id": "B08", "query": "孩子发烧39度，整个人蔫蔫的", "expect": {"red_flag": false, "dept": "儿科"}}
+  ]
+}
