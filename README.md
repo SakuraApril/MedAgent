@@ -40,6 +40,7 @@ ReAct 式工具编排 + 记忆 + RAG 检索 + 护栏 + 离线评测。纯标准�
    ├─ 记忆层（agent/memory.py）  会话级短期记忆 + 结构化槽位
    ├─ 检索层（agent/rag.py）     分块 + TF-IDF + 余弦相似度
    ├─ 护栏层（agent/guard.py）   拒答 / 软化表述 / 强制免责
+   ├─ MCP 层（mcp_server.py）   4 个工具按 MCP 协议对外暴露（stdio + JSON-RPC 2.0）
    └─ 审计层（app.py）           JSONL：会话、哈希、红旗、耗时
 ```
 
@@ -112,11 +113,49 @@ python app.py
 
 ---
 
+## 四之二、MCP 接入
+
+工具层不只服务于本项目的 HTTP 服务，也按 [Model Context Protocol](https://modelcontextprotocol.io) 暴露出去，
+任意 MCP 客户端（Claude Desktop / Cursor / 自研宿主）都能直接调用，不必为每个宿主重写一遍。
+
+`ash
+python mcp_server.py          # stdio + JSON-RPC 2.0
+`
+
+支持的方法：
+
+| 方法 | 作用 |
+|---|---|
+| initialize | 握手，返回协议版本与 capabilities.tools |
+| 	ools/list | 返回 4 个工具的 JSON Schema（直接复用 TOOL_SPECS） |
+| 	ools/call | 按名字分发到 dispatch()，结果以 content[].text 返回 |
+| 
+esources/list / prompts/list | 返回空列表，兼容会探测这两项的客户端 |
+| ping | 探活 |
+
+一次真实会话（行分隔 JSON-RPC，省略响应体细节）：
+
+`jsonc
+{jsonrpc:2.0,id:1,method:initialize,params:{protocolVersion:2024-11-05,capabilities:{}}}
+{jsonrpc:2.0,method:notifications/initialized}          // 通知，不返回
+{jsonrpc:2.0,id:2,method:tools/list}
+{jsonrpc:2.0,id:3,method:tools/call,params:{name:check_red_flag,arguments:{text:我爸胸痛还冒冷汗}}}
+`
+
+实测结果：4 个工具全部可列出；check_red_flag 返回 {hit: true, rules: [{id:RF01,...}]}；
+未知工具返回 -32602。
+
+**为什么用 MCP 而不是自己定一套插件机制**：工具的定义（名字 / 描述 / 参数 schema）本来就写好了，
+用 MCP 等于让这份定义被所有宿主复用；换成自定义格式，每接一个新宿主都要重写一遍适配层。
+
+---
+
 ## 五、目录
 
 ```
 medagent/
 ├── app.py                 HTTP 服务：/api/chat /api/health /api/eval /api/audit /api/memory
+├── mcp_server.py          MCP server：stdio + JSON-RPC，4 个工具对外暴露
 ├── agent/
 │   ├── core.py            Agent 主循环 + 轨迹 + 预算（步数/超时）
 │   ├── tools.py           4 个工具 + JSON Schema + dispatch
@@ -139,6 +178,7 @@ medagent/
 4. **知识库只有 10 条**，药品只有 8 种通用名，生产要接权威指南与药品数据库并做版本管理。
 5. **没有主动追问**：缺字段时不会问，而是靠记忆累积；真实分诊应该「缺什么问什么」。
 6. **审计只存哈希**：便于演示隐私设计，但不便于回溯具体对话。
+7. **MCP 只做了 stdio**：没有鉴权、没有多客户端并发管理，也没有实现 resources / prompts 的实际能力。
 
 ---
 
