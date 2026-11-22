@@ -6,7 +6,7 @@
 """
 import time
 
-from . import confidence, guard, llm
+from . import confidence, guard, intent, llm
 from .memory import store
 from .tools import dispatch, TOOL_SPECS, check_red_flag, drug_lookup, search_kb, triage
 
@@ -50,8 +50,30 @@ class Agent:
         def over_budget():
             return (time.time() - t0) > self.timeout_s or len(trace) >= self.max_steps
 
-        # ── 第 1 步：红旗（最高优先级，先救命）
+        # ── 第 1 步：意图识别（决定走哪条链路，而不是所有问题都走同一条）
+        it = intent.classify(effective)
+        flags["intent"] = it["intent"]
+        self._step(trace, f"识别问题意图：{intent.describe(it['intent'])}", "intent.classify",
+                   f"intent={it['intent']}，命中：{it['matched'] or '无'}"
+                   + (f"，多意图候选：{it['candidates']}" if it["is_mixed"] else ""), t0)
+
+        # 闲聊不进检索、不分诊：省掉一轮推理，也避免给出无依据的医学建议
+        if it["intent"] == "chat":
+            answer = guard.with_disclaimer(
+                "我是 MedAgent，一个医疗分诊助手，不做诊断、不开药。\n\n"
+                "你可以这样问我：\n"
+                "· 描述症状（哪里不舒服、持续多久、有没有发热）\n"
+                "· 问某个药能不能吃（我会提示注意事项，但请遵医嘱）\n"
+                "· 问该挂哪个科、去医院要准备什么")
+            mem.add("user", query)
+            mem.add("assistant", answer)
+            return self._finish(answer, trace, flags, t0, mem)
+
+        # ── 第 2 步：红旗（最高优先级，先救命）
         hit, rules = dispatch("check_red_flag", text=effective)
+        # 意图判成急救、但具体规则没命中：不短路（避免把普通问题当事故处理），
+        # 只在回答顶部加一条提醒——宁可多提醒一句，也不打断正常链路。
+        emergency_hint = (it["intent"] == "emergency") and not hit
         flags["red_flag"] = hit
         self._step(trace, "先判断有没有立刻危及生命的信号", "check_red_flag",
                    f"命中 {len(rules)} 条：{[r['name'] for r in rules]}" if hit else "未命中", t0)
@@ -83,6 +105,8 @@ class Agent:
 
         # ── 第 5 步：护栏判断
         parts = []
+        if emergency_hint:
+            parts.append("⚠ 你描述的情况可能属于需要**立即就医**的信号：如果正在发生，请直接拨打 120 或去急诊，不要等线上回复。")
         if guard.detect_diagnosis(query):
             flags["refused_diagnosis"] = True
             parts.append("**先说清楚一件事**\n" + guard.refuse_diagnosis().split("\n\n")[0])
@@ -92,6 +116,12 @@ class Agent:
 
         # ── 第 6 步：置信度闸门（有没有资格回答）
         conf = confidence.evaluate(query, tri, docs, drugs)
+
+        # 闸门只拦「给结论」（科室 / 诊断），不拦「给清单或用药注意事项」：
+        # 就诊准备是清单、用药咨询本来就不给具体药名，这两类可以带提示回答。
+        if conf["action"] == "ask_more" and it["intent"] in ("preparation", "medication"):
+            conf["action"] = "caveat"
+            conf["downgraded_by"] = "intent"
         self._step(trace, "评估证据是否足以给出结论", "confidence.evaluate",
                    f"score={conf['total']} 阈值={conf['threshold']} → {conf['action']}"
                    f"（E={conf['parts']['evidence']} C={conf['parts']['coverage']} S={conf['parts']['specific']}）",
@@ -160,6 +190,7 @@ class Agent:
             "flags": flags,
             "memory": mem.to_dict(),
             "confidence": conf,
+            "intent": flags.get("intent"),
             "latency_ms": int((time.time() - t0) * 1000),
             "steps": len(trace),
         }

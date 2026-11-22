@@ -1,0 +1,27 @@
+{
+  "_comment": "意图识别评测集：query → 期望意图。用于计算意图准确率与混淆情况。",
+  "items": [
+    {"query": "突然胸痛，喘不上气", "intent": "emergency"},
+    {"query": "家里人晕倒了怎么办", "intent": "emergency"},
+    {"query": "伤口一直流血止不住", "intent": "emergency"},
+    {"query": "小孩高烧抽搐了", "intent": "emergency"},
+
+    {"query": "布洛芬一天能吃几次", "intent": "medication"},
+    {"query": "抗生素要吃几天", "intent": "medication"},
+    {"query": "哺乳期能吃感冒药吗", "intent": "medication"},
+    {"query": "阿莫西林有副作用吗", "intent": "medication"},
+
+    {"query": "咳嗽三天了有黄痰", "intent": "symptom"},
+    {"query": "肚子疼得厉害", "intent": "symptom"},
+    {"query": "最近老是头晕", "intent": "symptom"},
+    {"query": "身上起了一片红疹", "intent": "symptom"},
+
+    {"query": "去医院要带什么材料", "intent": "preparation"},
+    {"query": "头晕应该挂什么科", "intent": "preparation"},
+    {"query": "抽血前要空腹吗", "intent": "preparation"},
+
+    {"query": "你好", "intent": "chat"},
+    {"query": "你能做什么", "intent": "chat"},
+    {"query": "谢谢你", "intent": "chat"}
+  ]
+}

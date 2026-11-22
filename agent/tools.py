@@ -9,6 +9,7 @@ import os
 import re
 
 from . import rag
+from .hybrid import HybridIndex
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
@@ -25,7 +26,7 @@ _DRUGS = _load("drugs.json")["drugs"]
 _SYN = _load("synonyms.json")["map"]
 
 # 知识库索引在启动时构建一次（生产环境应换成向量库 + 增量更新）
-KB_INDEX = rag.TfidfIndex(_KB)
+KB_INDEX = HybridIndex(_KB)
 
 
 def _norm(s):

@@ -45,10 +45,12 @@ def chunk(docs, min_len=24):
                 buf += p
             else:
                 if buf.strip():
-                    chunks.append({"doc_id": d["id"], "title": d["title"], "text": buf.strip()})
+                    chunks.append({"doc_id": d["id"], "title": d["title"], "text": buf.strip(),
+                                   "tags": d.get("tags", [])})
                 buf = p
         if buf.strip():
-            chunks.append({"doc_id": d["id"], "title": d["title"], "text": buf.strip()})
+            chunks.append({"doc_id": d["id"], "title": d["title"], "text": buf.strip(),
+                           "tags": d.get("tags", [])})
     return chunks
 
 
@@ -58,7 +60,9 @@ class TfidfIndex:
         self.tfs = []
         df = Counter()
         for c in self.chunks:
-            tf = Counter(tokenize(c["title"] + c["text"]))
+            # 标签也要索引：KB10 的正文里没有「就诊 / 挂号」，只有 tags 里有，
+            # 不索引标签就会导致「去医院要带什么」查不到这篇。
+            tf = Counter(tokenize(c["title"] + c["text"] + "".join(c.get("tags", []))))
             self.tfs.append(tf)
             df.update(set(tf.keys()))
         n = max(1, len(self.chunks))

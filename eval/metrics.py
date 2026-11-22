@@ -132,6 +132,20 @@ def task_metrics():
     }
 
 
+def intent_metrics():
+    from agent import intent as intent_mod
+    items = load("intent.json")["items"]
+    ok = 0
+    wrong = []
+    for it in items:
+        got = intent_mod.classify(it["query"])["intent"]
+        if got == it["intent"]:
+            ok += 1
+        else:
+            wrong.append((it["query"], it["intent"], got))
+    return {"n": len(items), "acc": round(ok / len(items), 3), "wrong": wrong}
+
+
 def gate_metrics():
     """门控指标：误放率（该拦没拦）与漏拦率（不该拦却拦）"""
     items = load("gate.json")["items"]
@@ -186,6 +200,14 @@ if __name__ == "__main__":
         print("\n非首位命中的查询：")
         for d in missed:
             print("  %-22s rank=%s got=%s" % (d["query"], d["rank"], d["got"]))
+
+    im = intent_metrics()
+    print("\n" + "=" * 56)
+    print("意图识别（%d 条，五类）" % im["n"])
+    print("=" * 56)
+    print("准确率 = %.1f%%" % (im["acc"] * 100))
+    for q, exp, got in im["wrong"]:
+        print("  错分: %-20s 期望=%s 实际=%s" % (q, exp, got))
 
     g = gate_metrics()
     print("\n" + "=" * 56)
