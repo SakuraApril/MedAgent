@@ -132,6 +132,41 @@ def task_metrics():
     }
 
 
+def perf_metrics():
+    """性能指标：步数分布与延迟分位（跑 42 条用例）"""
+    lat, steps = [], []
+    buckets = {}
+    for name in ["cases.json", "multiturn.json", "holdout.json", "blind.json"]:
+        for c in load(name)["cases"]:
+            if "turns" in c:
+                res = None
+                for turn in c["turns"]:
+                    res = agent.run(turn, "perf-" + c["id"])
+            else:
+                res = agent.run(c["query"], "perf")
+            lat.append(res["latency_ms"])
+            steps.append(res["steps"])
+            intent = res.get("intent") or "?"
+            buckets.setdefault(intent, []).append(res["steps"])
+
+    lat.sort()
+    def pct(p):
+        if not lat:
+            return 0
+        idx = min(len(lat) - 1, int(round(p / 100 * (len(lat) - 1))))
+        return lat[idx]
+
+    return {
+        "n": len(lat),
+        "avg_steps": round(sum(steps) / len(steps), 2) if steps else 0,
+        "max_steps": max(steps) if steps else 0,
+        "p50_ms": pct(50),
+        "p95_ms": pct(95),
+        "avg_ms": round(sum(lat) / len(lat), 1) if lat else 0,
+        "steps_by_intent": {k: round(sum(v) / len(v), 2) for k, v in buckets.items()},
+    }
+
+
 def intent_metrics():
     from agent import intent as intent_mod
     items = load("intent.json")["items"]
@@ -200,6 +235,14 @@ if __name__ == "__main__":
         print("\n非首位命中的查询：")
         for d in missed:
             print("  %-22s rank=%s got=%s" % (d["query"], d["rank"], d["got"]))
+
+    pm = perf_metrics()
+    print("\n" + "=" * 56)
+    print("性能指标（%d 次请求，无大模型调用）" % pm["n"])
+    print("=" * 56)
+    print("平均步数 = %.2f（最多 %d 步）" % (pm["avg_steps"], pm["max_steps"]))
+    print("延迟 P50 = %d ms / P95 = %d ms / 均值 %.1f ms" % (pm["p50_ms"], pm["p95_ms"], pm["avg_ms"]))
+    print("分意图步数：" + "，".join(f"{k}={v}" for k, v in sorted(pm["steps_by_intent"].items())))
 
     im = intent_metrics()
     print("\n" + "=" * 56)
