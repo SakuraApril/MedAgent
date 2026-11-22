@@ -316,3 +316,57 @@ python tools/check.py --update   # 确认提升后，把当前结果写成新基
 > 没有大模型时它反映规则链路长度，接上模型后同一套指标可以直接复用。
 
 ---
+
+---
+
+## 三之五、知识库版本管理（SQLite，仍然零依赖）
+
+知识库是**数据**不是代码，直接改 JSON 没法回滚、没法灰度、也没法知道哪篇文档从来没人搜到。
+
+三张表：
+
+| 表 | 作用 |
+|---|---|
+| kb_versions | 版本号、状态（draft / active / archived）、变更说明 |
+| kb_docs | 某版本下的文档快照 |
+| kb_hits | 按版本 + 文档统计命中次数 |
+
+生命周期：create_version() 一律落 **draft** → publish() 把旧 active 置 archived、目标版本置 active 并重建索引 → 出问题 
+ollback() 回到上一版。
+
+`ash
+# HTTP 接口（app.py 启动后）
+GET  /api/kb/versions     # 版本列表与当前 active
+GET  /api/kb/stats        # 命中排行 + 冷文档（一次都没被检索到的）
+POST /api/kb/publish      # {version: v2}
+POST /api/kb/rollback
+`
+
+实测：新建 v2（新增一条咳嗽护理文档）→ 发布后索引 11 篇、新文档可检索 → 回滚到 v1，索引回到 10 篇、新文档检索不到。
+
+---
+
+## 三之六、降级容错：任何一步失败都不许阻塞主链路
+
+| 降级原因 | 触发条件 | 用户拿到什么 |
+|---|---|---|
+| 
+etrieval_error | 检索抛异常 | 科室建议 + 就医提示（不编造依据） |
+| empty_result | 检索无命中 | 同上，并标注信息有限 |
+| llm_failed | 大模型不可用/超时 | 模板答案 |
+| 	imeout | 超步数或时间预算 | 兜底话术 + 建议就医 |
+
+每一级都会记进 lags.degraded，进 trace、进审计日志。
+
+验收（注入失败验证链路不断）：
+
+`ash
+python tools/verify_degrade.py
+# ✅ 检索异常   降级=['retrieval_error'] 答案 204 字
+# ✅ 正常路径   降级=无
+`
+
+**降级率**：42 条评测里 38.1% 触发降级，全部是 empty_result——知识库只有 10 篇文档，
+覆盖不足是真实短板，不是代码问题。这个数字比「一切正常」有用。
+
+---

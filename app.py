@@ -70,6 +70,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             return self._file(os.path.join(STATIC, "index.html"))
+        if self.path == "/api/kb/versions":
+            from agent import tools
+            return self._json({"active": tools.STORE.active_version(), "versions": tools.STORE.versions()})
+
+        if self.path == "/api/kb/stats":
+            from agent import tools
+            return self._json(tools.STORE.hit_stats())
+
         if self.path == "/api/health":
             return self._json({
                 "ok": True,
@@ -119,6 +127,25 @@ class Handler(BaseHTTPRequestHandler):
                 "latency_ms": res["latency_ms"],
             })
             return self._json(res)
+
+        if self.path == "/api/kb/publish":
+            data = self._body()
+            from agent import tools
+            try:
+                v = tools.STORE.publish((data.get("version") or "").strip())
+                n = tools.reload_index()
+                return self._json({"ok": True, "active": v["version"], "docs": n})
+            except Exception as e:
+                return self._json({"error": str(e)}, 400)
+
+        if self.path == "/api/kb/rollback":
+            from agent import tools
+            try:
+                r = tools.STORE.rollback()
+                n = tools.reload_index()
+                return self._json({"ok": True, **r, "docs": n})
+            except Exception as e:
+                return self._json({"error": str(e)}, 400)
 
         if self.path == "/api/eval":
             sys.path.insert(0, os.path.join(ROOT, "eval"))

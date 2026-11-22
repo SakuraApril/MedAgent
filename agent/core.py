@@ -6,7 +6,7 @@
 """
 import time
 
-from . import confidence, guard, intent, llm
+from . import confidence, degrade, guard, intent, llm
 from .memory import store
 from .tools import dispatch, TOOL_SPECS, check_red_flag, drug_lookup, search_kb, triage
 
@@ -85,6 +85,7 @@ class Agent:
             return self._finish(answer, trace, flags, t0, mem)
 
         if over_budget():
+            degrade.mark(flags, "timeout")
             answer = guard.with_disclaimer("处理超时，请重试或直接就医。")
             return self._finish(answer, trace, flags, t0, mem)
 
@@ -93,8 +94,14 @@ class Agent:
         self._step(trace, "根据症状关键词推断首诊科室", "triage",
                    f"推荐 {tri['dept']}（命中：{tri['matched'] or '无'}）", t0)
 
-        # ── 第 3 步：RAG 检索
-        docs = dispatch("search_kb", query=effective, top_k=2)
+        # ── 第 3 步：RAG 检索（失败就降级，不阻塞）
+        try:
+            docs = dispatch("search_kb", query=effective, top_k=2)
+            if not docs:
+                degrade.mark(flags, "empty_result")
+        except Exception as e:
+            docs = []
+            degrade.mark(flags, "retrieval_error", str(e)[:60])
         obs = "；".join(f"{d['title']}({d['score']})" for d in docs) if docs else "无命中"
         self._step(trace, "向量检索知识库（TF-IDF + 余弦相似度）", "search_kb", obs, t0)
 
@@ -142,10 +149,17 @@ class Agent:
         answer = guard.with_disclaimer(guard.soften(body))
 
         # ── 第 7 步：可选润色（有 key 时；润色后再过一遍护栏）
-        polished = llm.polish(answer, query)
+        try:
+            polished = llm.polish(answer, query)
+        except Exception as e:
+            polished = None
+            degrade.mark(flags, "llm_failed", str(e)[:60])
         if polished:
             answer = guard.with_disclaimer(guard.soften(polished))
             self._step(trace, "用大模型润色表达（不新增医学结论）", "llm.polish", "已润色", t0)
+
+        if flags.get("degraded"):
+            self._step(trace, "发生降级，记录原因", "degrade.mark", degrade.describe(flags), t0)
 
         mem.update_slots(effective, triage=tri)
         mem.add("user", query)

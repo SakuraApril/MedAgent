@@ -28,3 +28,9 @@ desktop.ini
 
 # 本机推送用的包装脚本
 ssh443.bat
+
+# 本地运行时产物（kb.db 由 kb.json 自动重建，含命中统计不提交）
+data/kb.db
+_app.out
+_app.err
+__pycache__/

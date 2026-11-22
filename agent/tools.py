@@ -10,6 +10,7 @@ import re
 
 from . import rag
 from .hybrid import HybridIndex
+from .kbstore import bootstrap
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
@@ -21,7 +22,9 @@ def _load(name):
 
 _RED = _load("red_flags.json")["rules"]
 _TRIAGE = _load("triage_rules.json")
-_KB = _load("kb.json")["docs"]
+# 知识库从 SQLite 的 active 版本读取（首次启动自动把 kb.json 导入为 v1）
+STORE = bootstrap(kb_json=os.path.join(DATA, "kb.json"))
+_KB = STORE.docs() or _load("kb.json")["docs"]
 _DRUGS = _load("drugs.json")["drugs"]
 _SYN = _load("synonyms.json")["map"]
 
@@ -82,13 +85,23 @@ def triage(text):
 
 
 # ────────────────────────────────── 工具 3：知识库（RAG）
+def reload_index():
+    """切换知识库版本后重建索引（进程内，毫秒级）"""
+    global _KB, KB_INDEX
+    _KB = STORE.docs()
+    KB_INDEX = HybridIndex(_KB)
+    return len(_KB)
+
+
 def search_kb(query, top_k=2):
-    """走 RAG 链路：同义词扩展 → 分块 → TF-IDF 向量 → 余弦相似度 → top-k（带分数）。
+    """走 RAG 链路：同义词扩展 → 分块 → 双路召回 → RRF 融合 → top-k（带分数）。
 
     这里补上了 expand()：分诊和红旗判断一直用它，检索却漏了，
     导致「拉肚子」查不到「腹泻」那篇文档——是检索召回率的主要损失点。
     """
-    return KB_INDEX.search(expand(query), top_k=top_k)
+    res = KB_INDEX.search(expand(query), top_k=top_k)
+    STORE.record_hits([r["id"] for r in res])
+    return res
 
 
 # ────────────────────────────────── 工具 4：药品查询

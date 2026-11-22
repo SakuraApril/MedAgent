@@ -156,8 +156,17 @@ def perf_metrics():
         idx = min(len(lat) - 1, int(round(p / 100 * (len(lat) - 1))))
         return lat[idx]
 
+    degraded = 0
+    for name in ["cases.json", "multiturn.json", "holdout.json", "blind.json"]:
+        for c in load(name)["cases"]:
+            q = c.get("query") or (c.get("turns") or [""])[-1]
+            r = agent.run(q, "deg-" + str(abs(hash(q)) % 100000))
+            if r["flags"].get("degraded"):
+                degraded += 1
+
     return {
         "n": len(lat),
+        "degraded_rate": round(degraded / len(lat), 3) if lat else 0,
         "avg_steps": round(sum(steps) / len(steps), 2) if steps else 0,
         "max_steps": max(steps) if steps else 0,
         "p50_ms": pct(50),
@@ -242,6 +251,7 @@ if __name__ == "__main__":
     print("=" * 56)
     print("平均步数 = %.2f（最多 %d 步）" % (pm["avg_steps"], pm["max_steps"]))
     print("延迟 P50 = %d ms / P95 = %d ms / 均值 %.1f ms" % (pm["p50_ms"], pm["p95_ms"], pm["avg_ms"]))
+    print("降级率 = %.1f%%（检索无命中 / 超预算 / 模型不可用）" % (pm["degraded_rate"] * 100))
     print("分意图步数：" + "，".join(f"{k}={v}" for k, v in sorted(pm["steps_by_intent"].items())))
 
     im = intent_metrics()
