@@ -1,0 +1,15 @@
+{
+  "_comment": "检索评测标注集：query → 期望命中的知识库文档 id。用于计算 Recall@k 与 MRR。",
+  "items": [
+    {"query": "发烧到38.5度怎么办", "relevant": ["KB01"]},
+    {"query": "拉肚子怎么补充水分", "relevant": ["KB02"]},
+    {"query": "家里的血压计怎么量才准", "relevant": ["KB03"]},
+    {"query": "感冒能吃阿莫西林吗", "relevant": ["KB04"]},
+    {"query": "伤口流血了怎么处理", "relevant": ["KB05"]},
+    {"query": "什么情况应该去急诊", "relevant": ["KB06"]},
+    {"query": "宝宝发烧能不能吃退烧药", "relevant": ["KB07"]},
+    {"query": "突然剧烈头痛要警惕什么", "relevant": ["KB08"]},
+    {"query": "过敏全身起疹子怎么办", "relevant": ["KB09"]},
+    {"query": "去医院要带什么材料", "relevant": ["KB10"]}
+  ]
+}

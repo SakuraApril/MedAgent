@@ -82,8 +82,12 @@ def triage(text):
 
 # ────────────────────────────────── 工具 3：知识库（RAG）
 def search_kb(query, top_k=2):
-    """走 RAG 链路：分块 → TF-IDF 向量 → 余弦相似度 → top-k（带分数）。"""
-    return KB_INDEX.search(query, top_k=top_k)
+    """走 RAG 链路：同义词扩展 → 分块 → TF-IDF 向量 → 余弦相似度 → top-k（带分数）。
+
+    这里补上了 expand()：分诊和红旗判断一直用它，检索却漏了，
+    导致「拉肚子」查不到「腹泻」那篇文档——是检索召回率的主要损失点。
+    """
+    return KB_INDEX.search(expand(query), top_k=top_k)
 
 
 # ────────────────────────────────── 工具 4：药品查询

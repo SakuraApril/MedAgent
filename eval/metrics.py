@@ -1,0 +1,161 @@
+# -*- coding: utf-8 -*-
+"""MedAgent 量化指标报告
+
+    python eval/metrics.py
+
+输出两块：
+  1. 检索指标：Recall@1 / Recall@2 / MRR（基于 eval/qrels.json 标注集）
+  2. 任务指标：红旗召回、分诊准确率、拒答触发、免责覆盖（基于四套用例）
+"""
+import json
+import os
+import re
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+from agent.core import Agent                # noqa: E402
+from agent.guard import DISCLAIMER          # noqa: E402
+from agent.tools import search_kb, KB_INDEX  # noqa: E402
+
+EVAL = os.path.join(ROOT, "eval")
+agent = Agent()
+
+
+def load(name):
+    with open(os.path.join(EVAL, name), encoding="utf-8") as f:
+        return json.load(f)
+
+
+# ───────────────────────────── 检索指标
+def retrieval_metrics(top_k=5):
+    items = load("qrels.json")["items"]
+    hit1 = hit2 = hit3 = hit5 = 0
+    rr_sum = 0.0
+    details = []
+
+    for it in items:
+        results = search_kb(it["query"], top_k=top_k)
+        ids = [r["id"] for r in results]
+        rank = None
+        for i, doc_id in enumerate(ids, start=1):
+            if doc_id in it["relevant"]:
+                rank = i
+                break
+        hit1 += 1 if rank == 1 else 0
+        hit2 += 1 if rank and rank <= 2 else 0
+        hit3 += 1 if rank and rank <= 3 else 0
+        hit5 += 1 if rank and rank <= 5 else 0
+        rr_sum += (1.0 / rank) if rank else 0.0
+        details.append({"query": it["query"], "rank": rank, "got": ids})
+
+    n = len(items)
+    return {
+        "n": n,
+        "recall@1": round(hit1 / n, 3),
+        "recall@2": round(hit2 / n, 3),
+        "recall@3": round(hit3 / n, 3),
+        "recall@5": round(hit5 / n, 3),
+        "mrr": round(rr_sum / n, 3),
+        "details": details,
+        "chunks": len(KB_INDEX.chunks),
+    }
+
+
+# ───────────────────────────── 任务指标
+def task_metrics():
+    buckets = {}
+    for name in ["cases.json", "multiturn.json", "holdout.json", "blind.json"]:
+        buckets[name] = load(name)["cases"]
+
+    def run_case(c):
+        if "turns" in c:
+            res = None
+            for turn in c["turns"]:
+                res = agent.run(turn, "metrics-" + c["id"])
+            return res
+        return agent.run(c["query"], "metrics")
+
+    stats = {
+        "red_flag_cases": 0, "red_flag_hit": 0,
+        "triage_cases": 0, "triage_hit": 0,
+        "diag_cases": 0, "diag_refused": 0,
+        "rx_cases": 0, "rx_refused": 0,
+        "answers": 0, "with_disclaimer": 0,
+    }
+    red_fp = 0          # 期望非红旗但被判红旗
+    red_neg = 0
+
+    for name, cases in buckets.items():
+        for c in cases:
+            res = run_case(c)
+            exp = c["expect"]
+            ans = res["answer"]
+            stats["answers"] += 1
+            if DISCLAIMER in ans:
+                stats["with_disclaimer"] += 1
+
+            if "red_flag" in exp:
+                if exp["red_flag"]:
+                    stats["red_flag_cases"] += 1
+                    stats["red_flag_hit"] += 1 if res["flags"]["red_flag"] else 0
+                else:
+                    red_neg += 1
+                    red_fp += 1 if res["flags"]["red_flag"] else 0
+
+            if exp.get("dept"):
+                stats["triage_cases"] += 1
+                m = re.search(r"建议首诊科室：(.+?)\*\*", ans)
+                got = m.group(1).strip() if m else ""
+                stats["triage_hit"] += 1 if exp["dept"] in got else 0
+
+            if exp.get("refuse_diagnosis"):
+                stats["diag_cases"] += 1
+                stats["diag_refused"] += 1 if res["flags"]["refused_diagnosis"] else 0
+
+            if exp.get("refuse_prescription"):
+                stats["rx_cases"] += 1
+                stats["rx_refused"] += 1 if res["flags"]["refused_prescription"] else 0
+
+    def rate(a, b):
+        return round(a / b, 3) if b else None
+
+    return {
+        "红旗召回率": rate(stats["red_flag_hit"], stats["red_flag_cases"]),
+        "红旗误报率（负例）": rate(red_fp, red_neg),
+        "分诊准确率": rate(stats["triage_hit"], stats["triage_cases"]),
+        "诊断类拒答率": rate(stats["diag_refused"], stats["diag_cases"]),
+        "处方类拒答率": rate(stats["rx_refused"], stats["rx_cases"]),
+        "免责覆盖率": rate(stats["with_disclaimer"], stats["answers"]),
+        "样本数": {k: v for k, v in stats.items() if v},
+    }
+
+
+if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
+    r = retrieval_metrics()
+    print("=" * 56)
+    print("检索指标（标注集 %d 条，知识库 %d 块）" % (r["n"], r["chunks"]))
+    print("=" * 56)
+    print("Recall@1 = %.1f%%" % (r["recall@1"] * 100))
+    print("Recall@2 = %.1f%%" % (r["recall@2"] * 100))
+    print("Recall@3 = %.1f%%" % (r["recall@3"] * 100))
+    print("Recall@5 = %.1f%%" % (r["recall@5"] * 100))
+    print("MRR      = %.3f" % r["mrr"])
+    missed = [d for d in r["details"] if d["rank"] is None or d["rank"] > 1]
+    if missed:
+        print("\n非首位命中的查询：")
+        for d in missed:
+            print("  %-22s rank=%s got=%s" % (d["query"], d["rank"], d["got"]))
+
+    t = task_metrics()
+    print("\n" + "=" * 56)
+    print("任务指标（四套用例合计 %d 条）" % t["样本数"].get("answers", 0))
+    print("=" * 56)
+    for k in ["红旗召回率", "红旗误报率（负例）", "分诊准确率",
+              "诊断类拒答率", "处方类拒答率", "免责覆盖率"]:
+        v = t[k]
+        print("%-14s %s" % (k, "—" if v is None else "%.1f%%" % (v * 100)))
