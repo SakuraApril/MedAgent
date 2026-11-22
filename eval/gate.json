@@ -1,0 +1,18 @@
+{
+  "_comment": "门控评测集：expect_gate=true 的用例应当被拦下（转追问）；false 的应当正常回答。",
+  "items": [
+    {"query": "我最近不太舒服", "expect_gate": true},
+    {"query": "感觉身体怪怪的", "expect_gate": true},
+    {"query": "帮我看看这个怎么办", "expect_gate": true},
+    {"query": "难受好几天了", "expect_gate": true},
+    {"query": "我是不是生病了", "expect_gate": true},
+    {"query": "有点不舒服，说不上来", "expect_gate": true},
+
+    {"query": "咳嗽三天有黄痰", "expect_gate": false},
+    {"query": "肚子疼得厉害，还拉肚子", "expect_gate": false},
+    {"query": "头痛得厉害，晚上睡不着", "expect_gate": false},
+    {"query": "尿频尿急尿痛两天了", "expect_gate": false},
+    {"query": "膝盖疼，上下楼加重", "expect_gate": false},
+    {"query": "发烧38.5度，浑身酸痛", "expect_gate": false}
+  ]
+}

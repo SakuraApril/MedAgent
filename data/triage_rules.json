@@ -2,6 +2,19 @@
   "_comment": "症状 → 科室 的规则表。命中多个时按 priority 取最高，同分取匹配词最多者。",
   "departments": [
     {
+      "dept": "全科医学科",
+      "priority": 3,
+      "symptoms": [
+        "发热",
+        "发烧",
+        "乏力",
+        "酸痛",
+        "食欲差",
+        "全身不适",
+        "浑身疼"
+      ]
+    },
+    {
       "dept": "心血管内科",
       "priority": 9,
       "symptoms": [

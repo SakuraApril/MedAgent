@@ -6,7 +6,7 @@
 """
 import time
 
-from . import guard, llm
+from . import confidence, guard, llm
 from .memory import store
 from .tools import dispatch, TOOL_SPECS, check_red_flag, drug_lookup, search_kb, triage
 
@@ -90,9 +90,26 @@ class Agent:
             flags["refused_prescription"] = True
             parts.append("**关于用药**\n" + guard.refuse_prescription().split("\n\n")[0])
 
-        # ── 第 6 步：组装
+        # ── 第 6 步：置信度闸门（有没有资格回答）
+        conf = confidence.evaluate(query, tri, docs, drugs)
+        self._step(trace, "评估证据是否足以给出结论", "confidence.evaluate",
+                   f"score={conf['total']} 阈值={conf['threshold']} → {conf['action']}"
+                   f"（E={conf['parts']['evidence']} C={conf['parts']['coverage']} S={conf['parts']['specific']}）",
+                   t0)
+
+        if conf["action"] == "ask_more":
+            answer = guard.with_disclaimer(confidence.ask_more_answer())
+            mem.update_slots(effective)
+            mem.add("user", query)
+            mem.add("assistant", answer)
+            return self._finish(answer, trace, flags, t0, mem, conf)
+
+        # ── 第 7 步：组装
         parts.append(self._compose(tri, docs, drugs, mem, flags["memory_used"]))
-        answer = guard.with_disclaimer(guard.soften("\n\n".join(p for p in parts if p)))
+        body = "\n\n".join(p for p in parts if p)
+        if conf["action"] == "caveat":
+            body = confidence.caveat_line(conf) + "\n\n" + body
+        answer = guard.with_disclaimer(guard.soften(body))
 
         # ── 第 7 步：可选润色（有 key 时；润色后再过一遍护栏）
         polished = llm.polish(answer, query)
@@ -103,7 +120,7 @@ class Agent:
         mem.update_slots(effective, triage=tri)
         mem.add("user", query)
         mem.add("assistant", answer)
-        return self._finish(answer, trace, flags, t0, mem)
+        return self._finish(answer, trace, flags, t0, mem, conf)
 
     # ────────────────────────────── 组装
     def _compose(self, tri, docs, drugs, mem, memory_used):
@@ -136,12 +153,13 @@ class Agent:
         return "\n".join(lines)
 
     # ────────────────────────────── 收尾
-    def _finish(self, answer, trace, flags, t0, mem):
+    def _finish(self, answer, trace, flags, t0, mem, conf=None):
         return {
             "answer": answer,
             "trace": trace,
             "flags": flags,
             "memory": mem.to_dict(),
+            "confidence": conf,
             "latency_ms": int((time.time() - t0) * 1000),
             "steps": len(trace),
         }

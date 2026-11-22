@@ -132,6 +132,42 @@ def task_metrics():
     }
 
 
+def gate_metrics():
+    """门控指标：误放率（该拦没拦）与漏拦率（不该拦却拦）"""
+    items = load("gate.json")["items"]
+    should_gate = 0
+    false_accept = 0      # 该拦没拦
+    should_pass = 0
+    false_reject = 0      # 不该拦却拦
+    details = []
+
+    for it in items:
+        res = agent.run(it["query"], "gate-" + str(abs(hash(it["query"])) % 10000))
+        conf = res.get("confidence") or {}
+        gated = conf.get("action") == "ask_more"
+        ok = (gated == it["expect_gate"])
+        if it["expect_gate"]:
+            should_gate += 1
+            if not gated:
+                false_accept += 1
+        else:
+            should_pass += 1
+            if gated:
+                false_reject += 1
+        details.append({"query": it["query"], "expect_gate": it["expect_gate"],
+                        "action": conf.get("action"), "score": conf.get("total"), "ok": ok})
+
+    return {
+        "n": len(items),
+        "should_gate": should_gate,
+        "should_pass": should_pass,
+        "误放率": round(false_accept / should_gate, 3) if should_gate else None,
+        "漏拦率": round(false_reject / should_pass, 3) if should_pass else None,
+        "准确率": round(sum(1 for d in details if d["ok"]) / len(items), 3),
+        "details": details,
+    }
+
+
 if __name__ == "__main__":
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -150,6 +186,17 @@ if __name__ == "__main__":
         print("\n非首位命中的查询：")
         for d in missed:
             print("  %-22s rank=%s got=%s" % (d["query"], d["rank"], d["got"]))
+
+    g = gate_metrics()
+    print("\n" + "=" * 56)
+    print("门控指标（%d 条：应拦 %d / 应放 %d）" % (g["n"], g["should_gate"], g["should_pass"]))
+    print("=" * 56)
+    print("误放率 = %.1f%%（该拦没拦）" % (g["误放率"] * 100))
+    print("漏拦率 = %.1f%%（不该拦却拦）" % (g["漏拦率"] * 100))
+    print("门控准确率 = %.1f%%" % (g["准确率"] * 100))
+    for d in g["details"]:
+        if not d["ok"]:
+            print("  未通过: %-18s 期望拦=%s 实际=%s score=%s" % (d["query"], d["expect_gate"], d["action"], d["score"]))
 
     t = task_metrics()
     print("\n" + "=" * 56)
